@@ -62,7 +62,21 @@ def build_projection_matrix(R, C):
     return P
 
 
-def build_world(F, map_points1, map_points2):
+def matrix_cofactor(matrix):
+    try:
+        determinant = np.linalg.det(matrix)
+        if(determinant!=0):
+            cofactor = None
+            cofactor = np.linalg.inv(matrix).T * determinant
+            # return cofactor matrix of the given matrix
+            return cofactor
+        else:
+            raise Exception("singular matrix")
+    except Exception as e:
+        print("could not find cofactor matrix due to",e)
+        
+        
+def build_world(F, map_points1, map_points2, P1):
     mtrx = np.trace(np.dot(F, F.T)/2)*np.identity(len(F)) - np.dot(F, F.T)
     h14 = np.sqrt(mtrx[0, 0])
     h24 = mtrx[0, 1] / h14
@@ -70,29 +84,40 @@ def build_world(F, map_points1, map_points2):
     T_config1 = np.array([[0, -h34, h24], [h34, 0, -h14], [-h24, h14, 0]])
     T_config2 = (-1)*np.array(T_config1)
     
-    cofactor_F = np.linalg.det(F)*(np.linalg.inv(F).T)
+    C_config1 = np.transpose([h14, h24, h34])*(1/(h14**2 + h24**2 + h34**2))
+    C_config2 = (-1)*C_config1
+    
+    cofactor_F = matrix_cofactor(F).T
     R_config1 = (cofactor_F.T - np.dot(T_config1, F))*(1/(h14**2 + h24**2 + h34**2))
     R_config2 = (cofactor_F.T - np.dot(T_config2, F))*(1/(h14**2 + h24**2 + h34**2))
     
-    RT_combinations = [(T_config1, R_config1), (T_config1, R_config2), (T_config2, R_config1), (T_config2, R_config2)]
+    RT_combinations = [(C_config1, R_config1), (C_config1, R_config2), (C_config2, R_config1), (C_config2, R_config2)]
+    best_config = None
+    best_3d_points = None
+    best_count = 0
     for comb in RT_combinations:
-        C_init = np.transpose([0, 0, 0])
-        R_init = np.identity(3)
-    P1 = build_projection_matrix(R_init, C_init)
-    C1 = np.transpose([h14, h24, h34])
-    P2 = build_projection_matrix(R_config1, C1)
-    # C_possible = []
-    # for i in range(2):
-        
-    # print(best_matches_current)
-    # print(P1, P2)
-    # X_3D = cv2.triangulatePoints(P1, P2, best_matches1[0], best_matches2[0])
-    # print("The triangulated world coords: \n", X_3D)
-    # X_3D = list()
-    # for i in range(len(best_matches1)):
-    #     x_3d = cv2.triangulatePoints(P1, P2, best_matches1[i], best_matches2[i])
-    #     x_3d = x_3d / x_3d[-1]
-    #     X_3D.append(x_3d[0:3])
+        # C_init = np.transpose([0, 0, 0])
+        # R_init = np.identity(3)
+        C2, R2 = comb
+        P2 = build_projection_matrix(R2, C2)
+        # print(best_matches_current)
+        # print(P1, P2)
+        X_3D = list()
+        count = 0
+        for i in range(len(map_points1)):
+            x_3d = cv2.triangulatePoints(P1, P2, map_points1[i], map_points2[i])
+            x_3d = x_3d / x_3d[-1]
+            X_3D.append(x_3d[0:3])
+            if x_3d[-1] > 0:
+                count += 1
+        if count > best_count:
+            best_count = count
+            # print(best_count)
+            best_config = comb
+            best_3d_points = X_3D
+            print(best_3d_points)
+            
+    return P2, best_config, best_3d_points
 
 
 def main():
@@ -120,54 +145,51 @@ def main():
         #     # print(best_matches1)
         #     plot_best_matches2 = imutils.get_plot_points(best_matches2, frame1.shape)
         #     imutils.plot_matches(frame1, frame2, best_matches1, plot_best_matches2)
-            # funda_matrix = all_F[i]
-            # mtrx = np.trace(np.dot(funda_matrix, funda_matrix.T)/2)*np.identity(len(funda_matrix)) - np.dot(funda_matrix, funda_matrix.T)
-            # print(mtrx)
-
-        frame1, frame2 = all_frames[0], all_frames[1]
-        best_matches1, best_matches2 = np.array_split(all_best_matches[0], 2, axis=1)
-        F = all_F[0]
-        mtrx = np.trace(np.dot(F, F.T)/2)*np.identity(len(F)) - np.dot(F, F.T)
-        # h = np.diag(mtrx)
-        # print(mtrx)
-        h14 = np.sqrt(mtrx[0, 0])
-        h24 = mtrx[0, 1] / h14
-        h34 = mtrx[0, 2] / h14
-        T_config1 = np.array([[0, -h34, h24], [h34, 0, -h14], [-h24, h14, 0]])
-        T_config2 = (-1)*np.array(T_config1)
+        #     # funda_matrix = all_F[i]
+        #     # mtrx = np.trace(np.dot(funda_matrix, funda_matrix.T)/2)*np.identity(len(funda_matrix)) - np.dot(funda_matrix, funda_matrix.T)
+        #     # print(mtrx)
         
-        cofactor_F = np.linalg.det(F)*(np.linalg.inv(F).T)
-        R_config1 = (cofactor_F.T - np.dot(T_config1, F))*(1/(h14**2 + h24**2 + h34**2))
-        R_config2 = (cofactor_F.T - np.dot(T_config2, F))*(1/(h14**2 + h24**2 + h34**2))
-        
-        C_init = np.transpose([0, 0, 0])
-        R_init = np.identity(3)
-        P1 = build_projection_matrix(R_init, C_init)
-        C1 = np.transpose([h14, h24, h34])
-        P2 = build_projection_matrix(R_config1, C1)
-        
-        # print(best_matches_current)
-        # print(P1, P2)
-        # X_3D = cv2.triangulatePoints(P1, P2, best_matches1[0], best_matches2[0])
-        # print("The triangulated world coords: \n", X_3D)
-        X_3D = list()
-        for i in range(len(best_matches1)):
-            x_3d = cv2.triangulatePoints(P1, P2, best_matches1[i], best_matches2[i])
-            x_3d = x_3d / x_3d[-1]
-            X_3D.append(x_3d[0:3])
-        # print(X_3D[0])
-        
+        X_3D_set = list()
+        psn_set = list()
+        P_set = list()
+        for i in range(len(all_frames)-1):
+            try:
+                if i == 0:
+                    C_init = np.transpose([0, 0, 0])
+                    R_init = np.identity(3)
+                    P1 = build_projection_matrix(R_init, C_init)
+                    best_matches1, best_matches2 = np.array_split(all_best_matches[i], 2, axis=1)
+                    F = all_F[i]
+                    curr_P, best_config, best_3d_pts = build_world(F, best_matches1, best_matches2, P1)
+                    X_3D_set.append(best_3d_pts)
+                    psn_set.append(best_config)
+                    P_set.append(curr_P)
+                    
+                else:
+                    P1 = P_set[i-1]
+                    best_matches1, best_matches2 = np.array_split(all_best_matches[i], 2, axis=1)
+                    F = all_F[i]
+                    curr_P, best_config, best_3d_pts = build_world(F, best_matches1, best_matches2, P1)
+                    X_3D_set.append(best_3d_pts)
+                    psn_set.append(best_config)
+                    P_set.append(curr_P)
+            except:
+                print("Detected a Singular Matrix!")
+                continue
+                
         fig = plt.figure()
         ax = fig.gca(projection='3d')
         
-        for i in range(len(X_3D)):
-            ax.scatter3D(X_3D[i][0], X_3D[i][1], X_3D[i][2], color = "green")
+        for X_3D in X_3D_set:
+            for i in range(len(X_3D)):
+                ax.scatter3D(X_3D[i][0], X_3D[i][1], X_3D[i][2], color = "green")
         
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
         plt.title("World Coordinates")
         plt.show()
+
     
     else:    
         cap = cv2.VideoCapture(input_path)
@@ -182,7 +204,7 @@ def main():
             else:
                 break
         
-        all_frames = all_frames[:100]
+        all_frames = all_frames[:]
 
         points_master = list()
         all_F = list()
@@ -190,7 +212,11 @@ def main():
             print(i)
             frame1, frame2 = all_frames[i], all_frames[i+1]
             pt_set1, pt_set2 = get_orb_matches(frame1, frame2)
-            F, best_idxs = mutils.get_inliers(pt_set1, pt_set2, n_iterations=2000, error_thresh=0.003)
+            F, best_idxs = mutils.get_inliers(pt_set1, pt_set2, n_iterations=500, error_thresh=0.005)
+            # F,mask = cv2.findFundamentalMat(pt_set1, pt_set2, cv2.FM_RANSAC)
+            # best_pts1 = pt_set1[mask.ravel() == 1]
+            # best_pts2 = pt_set2[mask.ravel() == 1]
+            
             best_pts1, best_pts2 = pt_set1[best_idxs], pt_set2[best_idxs]
             points_master.append(np.hstack((best_pts1, best_pts2)))
             all_F.append(F)
